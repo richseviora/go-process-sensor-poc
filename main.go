@@ -1,75 +1,56 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"os/exec"
-	"strconv"
-	"strings"
+	"os"
+	"os/signal"
+	"sync"
+	"time"
 )
 
-type ProcessInfo struct {
-	name      string
-	arguments string
-	pid       int32
+import "github.com/mitchellh/go-ps"
+
+func getProcessInfo() ([]ps.Process, error) {
+	return ps.Processes()
 }
 
-func getProcessInfo() *bytes.Buffer {
-	cmd := exec.Command("ps")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if err != nil {
-		return &bytes.Buffer{}
-	}
-	return &out
-}
-
-func parseProcessLine(line string) ProcessInfo {
-	stringPid := strings.TrimSpace(line[0:6])
-	pid, err := strconv.ParseInt(stringPid, 10, 32)
-	if err != nil {
-		fmt.Println(err)
-		return ProcessInfo{}
-	}
-	return struct {
-		name      string
-		arguments string
-		pid       int32
-	}{
-		name: strings.TrimSpace(line[27:]),
-		// TODO: Figure out how to parse arguments from command name.
-		arguments: "",
-		pid:       int32(pid),
-	}
-}
-
-func parseProcessInfo(b *bytes.Buffer) []ProcessInfo {
-	var results []ProcessInfo
-	var err error
-	var line string
-	// Drop first line
-	line, err = b.ReadString('\n')
-	fmt.Printf("First Line %s \n", line)
+func recurringTimer(ctx context.Context, wg *sync.WaitGroup) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	fmt.Println("Starting Timer")
+	fmt.Println("Starting Goroutine")
 	for {
-		line, err = b.ReadString('\n')
-		fmt.Printf("Parsed Process Line %s \n", line)
-		if len(line) > 0 {
-			results = append(results, parseProcessLine(line))
-		}
-		if err != nil {
-			fmt.Println("Error, Returning Now")
-			fmt.Println(err)
-			break
+		fmt.Println(time.Now().String())
+		// Select only for channels
+		select {
+		case <-ctx.Done():
+			wg.Done()
+			return
+		case <-ticker.C:
+			printProcessInfo()
 		}
 	}
-	return results
+}
+
+func printProcessInfo() {
+	processes, err := getProcessInfo()
+	if err != nil {
+		return
+	}
+	for _, p := range processes {
+		fmt.Printf("Name %s PID %d \n", p.Executable(), p.Pid())
+	}
 }
 
 func main() {
-	processInfoBuf := getProcessInfo()
-	processInfo := parseProcessInfo(processInfoBuf)
-	for _, p := range processInfo {
-		fmt.Printf("Name %s Arguments %s PID %d", p.name, p.arguments, p.pid)
-	}
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	ctx, cancel := context.WithCancel(context.Background())
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go recurringTimer(ctx, wg)
+	<-c
+	cancel()
+	wg.Wait()
 }
