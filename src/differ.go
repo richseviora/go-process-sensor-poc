@@ -12,6 +12,10 @@ type DiffResultOption struct {
 	Next []ps.Process
 }
 
+func processMatch(a ps.Process, b ps.Process) bool {
+	return (a.Pid() == b.Pid()) && (a.Executable() == b.Executable())
+}
+
 func any(vs []ps.Process, f func(process ps.Process) bool) bool {
 	for _, v := range vs {
 		if f(v) {
@@ -34,7 +38,7 @@ func filter(vs []ps.Process, f func(process ps.Process) bool) []ps.Process {
 func (o DiffResultOption) Added() []ps.Process {
 	return filter(o.Next, func(newProcess ps.Process) bool {
 		return !any(o.Prev, func(oldProcess ps.Process) bool {
-			return oldProcess.Pid() == newProcess.Pid()
+			return processMatch(newProcess, oldProcess)
 		})
 	})
 }
@@ -42,7 +46,7 @@ func (o DiffResultOption) Added() []ps.Process {
 func (o DiffResultOption) Removed() []ps.Process {
 	return filter(o.Prev, func(newProcess ps.Process) bool {
 		return !any(o.Next, func(oldProcess ps.Process) bool {
-			return oldProcess.Pid() == newProcess.Pid()
+			return processMatch(newProcess, oldProcess)
 		})
 	})
 }
